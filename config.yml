@@ -1,0 +1,24 @@
+# config.yaml
+
+generate_scenarios: false
+
+paths: #recommend to do not change these paths
+  dataset_root: "datasets" 
+  results_root: "results"
+
+mpi:
+  omp_num_threads: 8 # to adjust the number of threads used by OpenMP
+
+experiment:
+  seeds: [3]
+  dims: [2,5,10]
+  n_classes: [2]
+  n_clusters_per_class: [1,2,3,4]
+  ratio_affected: [0.5,1]
+  drift_types: [0,1,2,3]
+  approaches: [0,2]
+
+  window_size: 1000 # default window size for the sliding window in our experiments
+
+results_file: "results.csv"
+plot_results: false
