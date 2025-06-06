@@ -5,7 +5,7 @@ from mpi4py import MPI
 import random
 
 from data.scenarios import generate_scenarios
-from tasks_scheduler import build_tasks
+from utils.utils import *
 from engine.runner import engine
 
 def parse_args():
