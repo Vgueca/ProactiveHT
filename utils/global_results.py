@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 from filelock import FileLock, Timeout
-from .csv import safe_read_csv
+from .csv_utils import safe_read_csv
 
 def store_global_result(summary_csv, record, key_fields, lock_timeout=10):
     os.makedirs(os.path.dirname(summary_csv), exist_ok=True)

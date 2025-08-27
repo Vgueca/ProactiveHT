@@ -1,11 +1,23 @@
-from .csv import save_stream
+import sys
+import os
+
+# Add parent directory to path to allow imports when running as script
+if __name__ == "__main__":
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from utils.csv_utils import save_stream
+    from .generators import RandomRBFMC
+except ImportError:
+    # When running as script, use absolute imports
+    from utils.csv_utils import save_stream
+    from data.generators import RandomRBFMC
+
 import utils.utils as ut
 from mpi4py import MPI
 import numpy as np
 import pandas as pd
-import os
 from utils.utils import Centroid
-from .generators import RandomRBFMC
 
 
 class DataDrift:
@@ -125,17 +137,143 @@ class DataDrift:
                 for j in range(self.n_class):
                     aux_stream.incremental_moving_fixed_clusters(j, n_affected, width= WIDTH, destination=positions[i+1][j*n_affected:(j)*n_affected+n_affected])
 
-                df_aux = save_stream(aux_stream, "results/aux_"+str(i)+".csv", self.size, save=True)
+                df_aux = save_stream(aux_stream, f"temp_aux_{i}.csv", self.size, save=True)
                 df = pd.concat([df, df_aux], axis=0)
 
         df.to_csv(self.output_file, index=False, header=False)
 
         for i in range(n):
-            file = "results/aux_"+str(i)+".csv"
+            file = f"temp_aux_{i}.csv"
             if os.path.exists(file):
                 os.remove(file)
 
         return df
+
+    def multi_chase_drift(self):
+        """
+        Generate a stream with multiple Chase drifts occurring at random positions.
+        Each drift lasts for 250 samples and there are between 4-6 drifts total.
+        """
+        n_drifts = np.random.randint(4, 7)
+        drift_duration = 250
+        
+        total_stream_size = self.size
+        min_gap = 100 
+        
+        drift_positions = []
+        max_start_position = total_stream_size - drift_duration
+        
+        for i in range(n_drifts):
+            while True:
+                start_pos = np.random.randint(0, max_start_position)
+                end_pos = start_pos + drift_duration
+                
+                valid_position = True
+                for existing_start, existing_end in drift_positions:
+                    if not (end_pos < existing_start - min_gap or start_pos > existing_end + min_gap):
+                        valid_position = False
+                        break
+                
+                if valid_position:
+                    drift_positions.append((start_pos, end_pos))
+                    break
+                    
+                if len([pos for pos in drift_positions]) > 0:
+                    min_gap = max(50, min_gap - 10)
+        
+        drift_positions.sort()
+        
+        print(f"Generating {n_drifts} Chase drifts at positions: {drift_positions}")
+        
+        centroids = self.generate_centroids()
+        
+        self.stream = RandomRBFMC(
+            32, 42, n_classes=self.n_class, n_features=self.dimension, 
+            n_centroids=self.n_cluster_per_class*self.n_class, min_distance=1, 
+            std_dev=3, manual_centroid=centroids
+        )
+        
+        df_complete = pd.DataFrame()
+        current_position = 0
+        current_centroids = [centroid for centroid in centroids]  
+        
+        n_affected = int(self.n_cluster_per_class * self.ratio_affected)
+        if n_affected == 0:
+            n_affected = 1
+        
+        for drift_idx, (drift_start, drift_end) in enumerate(drift_positions):
+            if current_position < drift_start:
+                stable_size = drift_start - current_position
+                stable_stream = RandomRBFMC(
+                    32, 42, n_classes=self.n_class, n_features=self.dimension,
+                    n_centroids=self.n_cluster_per_class*self.n_class, min_distance=1,
+                    std_dev=3, manual_centroid=current_centroids
+                )
+                df_stable = save_stream(stable_stream, f"temp_stable_{drift_idx}.csv", stable_size, save=False)
+                df_complete = pd.concat([df_complete, df_stable], axis=0)
+                current_position = drift_start
+            
+            direction = np.random.normal(0, 1, self.dimension)
+            direction /= np.linalg.norm(direction)
+            module = np.random.uniform(1, 3)
+            drift_vector = direction * module
+            
+            new_centroids = []
+            for i in range(self.n_class):
+                for j in range(self.n_cluster_per_class):
+                    if j < n_affected:
+                        old_position = np.array(current_centroids[i * self.n_cluster_per_class + j].centre)
+                        new_position = old_position + drift_vector
+                        new_centroid = Centroid(new_position.tolist(), i, 0.1)
+                    else:
+                        new_centroid = current_centroids[i * self.n_cluster_per_class + j]
+                    new_centroids.append(new_centroid)
+            
+            drift_stream = RandomRBFMC(
+                32, 42, n_classes=self.n_class, n_features=self.dimension,
+                n_centroids=self.n_cluster_per_class*self.n_class, min_distance=1,
+                std_dev=3, manual_centroid=current_centroids
+            )
+            
+            for class_idx in range(self.n_class):
+                destinations = []
+                for j in range(n_affected):
+                    centroid_idx = class_idx * self.n_cluster_per_class + j
+                    dest_position = new_centroids[centroid_idx].centre
+                    destinations.append(dest_position)
+                
+                drift_stream.incremental_moving_fixed_clusters(
+                    class_idx, n_affected, width=drift_duration, destination=destinations
+                )
+            
+            df_drift = save_stream(drift_stream, f"temp_drift_{drift_idx}.csv", drift_duration, save=False)
+            df_complete = pd.concat([df_complete, df_drift], axis=0)
+    
+            current_centroids = new_centroids
+            current_position = drift_end
+        
+        if current_position < total_stream_size:
+            remaining_size = total_stream_size - current_position
+            final_stream = RandomRBFMC(
+                32, 42, n_classes=self.n_class, n_features=self.dimension,
+                n_centroids=self.n_cluster_per_class*self.n_class, min_distance=1,
+                std_dev=3, manual_centroid=current_centroids
+            )
+            df_final = save_stream(final_stream, f"temp_final.csv", remaining_size, save=False)
+            df_complete = pd.concat([df_complete, df_final], axis=0)
+        
+        for drift_idx in range(n_drifts):
+            for temp_file in [f"temp_stable_{drift_idx}.csv", f"temp_drift_{drift_idx}.csv"]:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+        if os.path.exists("temp_final.csv"):
+            os.remove("temp_final.csv")
+
+        if self.save:
+            df_complete.to_csv(self.output_file, index=False, header=False)
+            print(f"Multi-Chase drift dataset saved in {self.output_file}")
+        
+        return df_complete
 
     def cross(self):
 
@@ -188,10 +326,15 @@ class DataDrift:
                 )
         
         n_affected = int(self.n_cluster_per_class * self.ratio_affected)
-        
+
+        WIDTH = (self.size // self.n_class) // self.n_cluster_per_class
+        #WIDTH = 10000
+        if hasattr(self, 'width_factor'):
+            WIDTH = int(WIDTH * self.width_factor)
+
         for i in range(self.n_class):
             shift = np.random.uniform(1, 6)
-            self.stream.split_cluster_fixed_clusters(i, i, shift, 10000, n_affected, 3)
+            self.stream.split_cluster_fixed_clusters(i, i, shift, WIDTH, n_affected, 3)
 
         df = self.save_stream()
 
@@ -200,11 +343,11 @@ class DataDrift:
     def merge(self):
         centroids = self.generate_centroids(min_distance=1.5)
         self.stream = RandomRBFMC(
-                    32, 42, n_classes=self.n_class, n_features=self.dimension, n_centroids=self.n_cluster_per_class*self.n_class, min_distance=1, std_dev=3, manual_centroid=centroids
-                )
+            32, 42, n_classes=self.n_class, n_features=self.dimension, n_centroids=self.n_cluster_per_class*self.n_class, min_distance=1, std_dev=3, manual_centroid=centroids
+        )
         
         n_affected = int(self.n_cluster_per_class * self.ratio_affected)
-        
+
         WIDTH = (self.size // self.n_class) // self.n_cluster_per_class
         for i in range(self.n_class):   
             self.stream.merge_cluster_fixed_clusters(i, i, WIDTH, n_affected)
@@ -278,7 +421,7 @@ class DataDrift:
                 centroids[N].class_label, proportions=1, width=25000, destination=new_position.tolist()
             )
 
-            df_aux = save_stream(aux_stream, "results/clock_drift/df_clock_drift.csv", self.size, save=False)
+            df_aux = save_stream(aux_stream, "temp_clock_drift.csv", self.size, save=False)
             df = pd.concat([df, df_aux], axis=0) if not df.empty else df_aux
 
             centroids[N] = Centroid(new_position.tolist(), centroids[N].class_label, 0.1)
@@ -288,12 +431,13 @@ class DataDrift:
 
 
     '''
-    Depending on the type of scenario provided we can generate 5 different simple drifts:
+    Depending on the type of scenario provided we can generate 6 different simple drifts:
         0. (Chase) Clusters moving following the same path.
         1. (Cross) Clusters moving in opposite directions and meeting in the middle. 
         2. (Split) Clusters splitting in several portions with random directions.
         3. (Merge) Clusters from the same class merging into one, in the middle of the path.
-        5. (Clock*) Clusters moving in a circle around a point. (*) This scenarios was not included in the research but it was used for development purposes.
+        4. (Clock*) Clusters moving in a circle around a point. (*) This scenarios was not included in the research but it was used for development purposes.
+        5. (Multi-Chase) Multiple Chase drifts occurring at random positions in the stream. Abrupt scenario
     '''
     def drifting(self):
         if self.type == 0:
@@ -306,6 +450,8 @@ class DataDrift:
             self.drifted_dataframe = self.merge()
         elif self.type == 4:
             self.drifted_dataframe = self.clock(steps=5)
+        elif self.type == 5:
+            self.drifted_dataframe = self.multi_chase_drift()
 
 
         '''
@@ -330,8 +476,8 @@ class DataDrift:
 
 
 
-def generate_scenarios(config):
-    
+def generate_scenarios(config, width_factor=1.0, output_dir="datasets"):
+
     experiment_cfg = config['experiment']
     seeds = experiment_cfg['seeds']
     dims = experiment_cfg['dims']
@@ -350,7 +496,7 @@ def generate_scenarios(config):
             for n_class in n_classes:
                 for n_cluster_per_class in n_clusters_per_class:
                     for ratio in ratio_affected:
-                        path = f"datasets/seed{seed}/dim{dimension}/class{n_class}/cluster{n_cluster_per_class}/ratio{ratio}/"
+                        path = f"{output_dir}/seed{seed}/dim{dimension}/class{n_class}/cluster{n_cluster_per_class}/ratio{ratio}/"
                         if not os.path.exists(path):
                             os.makedirs(path, exist_ok=True)
 
@@ -361,10 +507,35 @@ def generate_scenarios(config):
 
                             output_file = scenario_path + "data.csv"
 
-                            print(f"Process {rank}: generating scenario {scenario_type} for seed={seed}, dim={dimension}, class={n_class}, cluster={n_cluster_per_class}, ratio={ratio}.")
+                            print(f"Process {rank}: generating scenario {scenario_type} for seed={seed}, dim={dimension}, class={n_class}, cluster={n_cluster_per_class}, ratio={ratio}, velocity_factor={width_factor}.")
 
-                            drift = DataDrift(output_file, n_class, n_cluster_per_class, ratio, dimension, scenario_type, True, 50000, seed)
+                            base_size = 50000
+                            adjusted_size = int(base_size * width_factor) if width_factor != 1.0 else base_size
+                            drift = DataDrift(output_file, n_class, n_cluster_per_class, ratio, dimension, scenario_type, True, adjusted_size, seed)
                             drifted_dataframe = drift.drifting()
 
                             drifted_dataframe.to_csv(output_file, index=False, header=False)
                             print(f"Process {rank}: scenario {scenario_type} saved in {output_file}.")
+
+
+if __name__ == "__main__":
+    import argparse
+    import yaml
+    
+    parser = argparse.ArgumentParser(description="Generate datasets with different drift velocities")
+    parser.add_argument("--config", default="config.yml", help="Configuration file")
+    parser.add_argument("--width_factor", type=float, default=1.0, 
+                       help="Drift velocity factor (0.5= fast, 1.0= normal)")
+    parser.add_argument("--output_dir", default="datasets", 
+                       help="Output directory for datasets")
+    
+    args = parser.parse_args()
+    
+    # Load configuration
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Generate scenarios with custom parameters
+    generate_scenarios(config, width_factor=args.width_factor, output_dir=args.output_dir)
+    
+    print(f"Datasets generated with velocity factor={args.width_factor} in {args.output_dir}/")

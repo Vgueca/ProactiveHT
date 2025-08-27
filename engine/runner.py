@@ -15,18 +15,31 @@ from approaches.PHT_S import ProactiveHT_S
 from approaches.PHT_MC import ProactiveHT_MC
 
 
-def engine(n_class, n_cluster_per_class, ratio_affected, seed, dimension, drift_type, output_folder, approach=0, window_size=1000, results_file = "summary.csv", plot_enabled=False):
+def engine(n_class, n_cluster_per_class, ratio_affected, seed, dimension, drift_type, output_folder, dataset_root="datasets", approach=0, window_size=1000, results_file = "summary.csv", plot_enabled=False, experiment_root=None):
 
-    input_file = os.path.join(
-        "datasets",
-        f"seed{seed}",
-        f"dim{dimension}",
-        f"class{n_class}",
-        f"cluster{n_cluster_per_class}",
-        f"ratio{ratio_affected}",
-        f"scenario_{drift_type}",
-        "data.csv"
-    )
+    # real-world dataset
+    if drift_type == "real":
+        dataset_name = output_folder.split('/')[-2]  
+        input_file = os.path.join(dataset_root, dataset_name, "data.csv")
+        scenario_type = dataset_name
+    elif drift_type == "abrupt":
+        dataset_name = output_folder.split('/')[-2]  
+        input_file = os.path.join(dataset_root, dataset_name, "data.csv")
+        scenario_type = dataset_name
+    else:
+        # synthetic datasets
+        input_file = os.path.join(
+            dataset_root,
+            f"seed{seed}",
+            f"dim{dimension}",
+            f"class{n_class}",
+            f"cluster{n_cluster_per_class}",
+            f"ratio{ratio_affected}",
+            f"scenario_{drift_type}",
+            "data.csv"
+        )
+        scenario_type = drift_type
+    
     if not os.path.exists(input_file):
         raise FileNotFoundError(f"[engine] Input file not found: {input_file}")
     raw_df = pd.read_csv(input_file, header=None)
@@ -43,21 +56,32 @@ def engine(n_class, n_cluster_per_class, ratio_affected, seed, dimension, drift_
     decision_boundaries, list_models, predictions = model.train(X, y)
     train_time = time.time() - start_time
 
-
     params = {
-        "seed": seed,
-        "dimension": dimension,
-        "n_class": n_class,
-        "n_cluster_per_class": n_cluster_per_class,
-        "ratio_affected": ratio_affected,
-        "scenario_type": drift_type,
+        "scenario_type": scenario_type,
         "approach": approach,
         "window_size": window_size,
         "train_time": train_time,
-        "stream": stream
+        "stream": stream,
+        "drift_type": drift_type  
     }
+    
+    params["dimension"] = dimension
+    
+    if drift_type not in ["real", "abrupt"]:
+        params.update({
+            "seed": seed,
+            "n_class": n_class,
+            "n_cluster_per_class": n_cluster_per_class,
+            "ratio_affected": ratio_affected,
+        })
+    else:
+        if n_class != 2:
+            params["n_class"] = n_class
+        
+        if drift_type == "abrupt":
+            params["seed"] = seed
 
-    mgr = ResultsManager(results_root=output_folder, results_file = results_file, plot_enabled=plot_enabled)
+    mgr = ResultsManager(results_root=output_folder, results_file = results_file, plot_enabled=plot_enabled, experiment_root=experiment_root)
     mgr.save_all(predictions=predictions, models=list_models, decision_boundaries=decision_boundaries, params=params)
     print(f"[Engine] Results saved to {output_folder}")
 

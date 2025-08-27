@@ -24,6 +24,7 @@ class ProactiveHT_S(ProactiveHTBase):
         self.node_region_alerts = {}
 
         self.region_threshold = 0.5
+        # self.region_threshold = 1
 
         if self.model._root is not None:
             self.assign_node_ids(self.model._root)

@@ -3,15 +3,18 @@ from pympler import asizeof
 import pandas as pd
 from sklearn.metrics import precision_score, recall_score, f1_score
 
-from .csv import update_predictions_csv, update_memory_csv
+from .csv_utils import update_predictions_csv, update_memory_csv
 from .metrics import analyze_degradations, compute_prequential_accuracy
 from .global_results import store_global_result
 from .plot import plot_frames
 
 class ResultsManager:
-    def __init__(self, results_root, results_file = "summary.csv",plot_enabled = False):
+    def __init__(self, results_root, results_file = "summary.csv", plot_enabled = False, experiment_root = None):
         self.results_root = results_root
-        self.summary_csv = "results/" + results_file     
+        if experiment_root:
+            self.summary_csv = os.path.join(experiment_root, results_file)
+        else:
+            self.summary_csv = os.path.join(results_root, results_file)
         self.plot_enabled = plot_enabled
 
     def save_all(self, predictions, models, decision_boundaries, params):
@@ -45,14 +48,11 @@ class ResultsManager:
         f1        = f1_score       (labels, preds, average='macro', zero_division=0)
 
 
+        # Build record with only available parameters
         record = {
-            "seed": params['seed'],
-            "dimension": params['dimension'],
-            "n_class": params['n_class'],
-            "n_cluster_per_class": params['n_cluster_per_class'],
-            "ratio_affected": params['ratio_affected'],
             "scenario_type": params['scenario_type'],
             "approach": params['approach'],
+            "dimension": params['dimension'],
             "pre_accuracy_global": float(preq_mean),
             "precision_macro": float(precision),
             "recall_macro": float(recall),
@@ -64,23 +64,43 @@ class ResultsManager:
             "fraction_degraded": float(frac),
             "avg_recovery_time": float(avg)
         }
-        keys = [
-            'seed','dimension','n_class','n_cluster_per_class',
-            'ratio_affected','scenario_type','approach'
-        ]
+        
+        # optional parameters 
+        optional_params = ['seed', 'n_class', 'n_cluster_per_class', 'ratio_affected']
+        for param in optional_params:
+            if param in params:
+                record[param] = params[param]
+        
+        # key fields
+        base_keys = ['scenario_type', 'approach']
+        keys = base_keys + [param for param in optional_params if param in record]
 
         store_global_result(self.summary_csv, record, keys)
 
 
         if self.plot_enabled:
-            plot_folder = os.path.join('results/plots',
-                                    f"seed{params['seed']}",
-                                    f"dim{params['dimension']}",
-                                    f"class{params['n_class']}",
-                                    f"cluster{params['n_cluster_per_class']}",
-                                    f"ratio{params['ratio_affected']}",
-                                    f"scenario_{params['scenario_type']}",
-                                    f"approach{params['approach']}")
+            plot_path_parts = ['plots']
+            
+            if 'seed' in params:
+                plot_path_parts.append(f"seed{params['seed']}")
+            
+            plot_path_parts.append(f"dim{params['dimension']}")
+            
+            if 'n_class' in params:
+                plot_path_parts.append(f"class{params['n_class']}")
+            
+            if 'n_cluster_per_class' in params:
+                plot_path_parts.append(f"cluster{params['n_cluster_per_class']}")
+            
+            if 'ratio_affected' in params:
+                plot_path_parts.append(f"ratio{params['ratio_affected']}")
+            
+            plot_path_parts.extend([
+                f"scenario_{params['scenario_type']}",
+                f"approach{params['approach']}"
+            ])
+            
+            plot_folder = os.path.join(self.results_root, *plot_path_parts)
             plot_frames(params.get('stream'), params.get('window_size'), models, decision_boundaries, plot_folder)
 
         print(f"[ResultsManager] Saved all results for approach {params['approach']}")

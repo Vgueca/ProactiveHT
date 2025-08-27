@@ -20,6 +20,7 @@ class ProactiveHT_MC(ProactiveHTBase):
         
         self.max_history = 5
         self.threshold_move = 0.08
+        # self.threshold_move = 0.05
         self.leaf_histories = {}
     
     def train(self, X, y ):

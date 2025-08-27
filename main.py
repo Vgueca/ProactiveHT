@@ -81,7 +81,7 @@ def main():
     for idx in range(rank, total, size):
         (n_class, n_clusters, ratio, seed, dimension,
          drift_type, folder, approach_id,
-         window_size) = tasks[idx]
+         window_size, experiment_root) = tasks[idx]
 
         print(f"[Rank {rank}] Task {idx+1}/{total}: "
               f"seed={seed}, dim={dimension}, drift={drift_type}, approach={approach_id}")
@@ -93,10 +93,12 @@ def main():
             dimension=dimension,
             drift_type=drift_type,
             output_folder=folder,
+            dataset_root=config["paths"]["dataset_root"],
             approach=approach_id,
             window_size=window_size,
             results_file=config.get("results_file", "summary.csv"),
-            plot_enabled=config.get("plot_results", False)  
+            plot_enabled=config.get("plot_results", False),
+            experiment_root=experiment_root
         )
         print(f"[Rank {rank}] Completed task {idx+1}/{total}")
     comm.Barrier()

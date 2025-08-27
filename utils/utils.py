@@ -1,6 +1,7 @@
 import os
 import shutil
 import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
@@ -186,35 +187,108 @@ def build_tasks(config):
     exp = config["experiment"]
     paths = config["paths"]
 
-    for seed in exp["seeds"]:
-        for dimension in exp["dims"]:
-            for n_class in exp["n_classes"]:
-                for n_cluster in exp["n_clusters_per_class"]:
-                    for ratio in exp["ratio_affected"]:
-                        for drift_type in exp["drift_types"]:
-                            for approach_id in exp["approaches"]:
+    # real-world datasets
+    is_real_world = "real" in exp["drift_types"]
+    
+    # abrupt datasets
+    is_abrupt = "abrupt" in exp["drift_types"]
+    
+    if is_real_world:
+        dataset_root = paths["dataset_root"]
+        available_datasets = []
+        
+        if os.path.exists(dataset_root):
+            for item in os.listdir(dataset_root):
+                item_path = os.path.join(dataset_root, item)
+                if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "data.csv")):
+                    available_datasets.append(item)
+        
+        for dataset_name in available_datasets:
+            for approach_id in exp["approaches"]:
+                
+                output_folder = os.path.join(
+                    paths["results_root"],
+                    dataset_name,
+                    f"approach{approach_id}"
+                )
+                os.makedirs(output_folder, exist_ok=True)
 
-                                output_folder = os.path.join(
-                                    paths["results_root"],
-                                    f"seed{seed}",
-                                    f"dim{dimension}",
-                                    f"class{n_class}",
-                                    f"cluster{n_cluster}",
-                                    f"ratio{ratio}",
-                                    f"scenario_{drift_type}",
-                                    f"approach{approach_id}"
-                                )
-                                os.makedirs(output_folder, exist_ok=True)
+                tasks.append((
+                    2,  
+                    1,  # dummy value
+                    1.0,  # dummy value
+                    42,  # dummy value
+                    len(pd.read_csv(os.path.join(dataset_root, dataset_name, "data.csv"), header=None).columns) - 1,  # dimension
+                    "real",  
+                    output_folder,
+                    approach_id,
+                    exp["window_size"],
+                    paths["results_root"]  
+                ))
+    elif is_abrupt:
+        dataset_root = paths["dataset_root"]
+        available_datasets = []
+        
+        if os.path.exists(dataset_root):
+            for item in os.listdir(dataset_root):
+                item_path = os.path.join(dataset_root, item)
+                if os.path.isdir(item_path) and os.path.exists(os.path.join(item_path, "data.csv")):
+                    available_datasets.append(item)
+        
+        for dataset_name in available_datasets:
+            for approach_id in exp["approaches"]:
+                
+                output_folder = os.path.join(
+                    paths["results_root"],
+                    dataset_name,
+                    f"approach{approach_id}"
+                )
+                os.makedirs(output_folder, exist_ok=True)
 
-                                tasks.append((
-                                    n_class,
-                                    n_cluster,
-                                    ratio,
-                                    seed,
-                                    dimension,
-                                    drift_type,
-                                    output_folder,
-                                    approach_id,
-                                    exp["window_size"]
-                                ))
+                tasks.append((
+                    2,  
+                    2,  
+                    1.0,  
+                    int(dataset_name.replace("abrupt", "")),  
+                    2,  
+                    "abrupt",  
+                    output_folder,
+                    approach_id,
+                    exp["window_size"],
+                    paths["results_root"]  
+                ))
+    else:
+        # synthetic datasets
+        for seed in exp["seeds"]:
+            for dimension in exp["dims"]:
+                for n_class in exp["n_classes"]:
+                    for n_cluster in exp["n_clusters_per_class"]:
+                        for ratio in exp["ratio_affected"]:
+                            for drift_type in exp["drift_types"]:
+                                for approach_id in exp["approaches"]:
+
+                                    output_folder = os.path.join(
+                                        paths["results_root"],
+                                        f"seed{seed}",
+                                        f"dim{dimension}",
+                                        f"class{n_class}",
+                                        f"cluster{n_cluster}",
+                                        f"ratio{ratio}",
+                                        f"scenario_{drift_type}",
+                                        f"approach{approach_id}"
+                                    )
+                                    os.makedirs(output_folder, exist_ok=True)
+
+                                    tasks.append((
+                                        n_class,
+                                        n_cluster,
+                                        ratio,
+                                        seed,
+                                        dimension,
+                                        drift_type,
+                                        output_folder,
+                                        approach_id,
+                                        exp["window_size"],
+                                        paths["results_root"]  
+                                    ))
     return tasks
