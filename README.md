@@ -1,5 +1,38 @@
 # Anticipating to Change: A Proactive Approach for Concept Drift Adaptation In Data Streams
 
+[![Original Paper](https://img.shields.io/badge/Original%20Paper-Springer-0A66C2?style=flat-square)](https://link.springer.com/article/10.1007/s10994-025-06945-4)
+
+<table align="center">
+  <tr>
+    <td align="center">
+      <strong>VFDT (HT)</strong>
+    </td>
+    <td align="center">
+      <strong>PHT-M</strong>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <strong>Chase drift</strong><br>
+      <img src="gifs/vfdt_boundary_seed3_chase.gif" alt="VFDT decision boundaries on chase drift" width="360">
+    </td>
+    <td align="center">
+      <strong>Chase drift</strong><br>
+      <img src="gifs/phtm_boundary_seed3_chase.gif" alt="PHT-M decision boundaries on chase drift" width="360">
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <strong>Cross drift</strong><br>
+      <img src="gifs/vfdt_boundary_seed6_cross.gif" alt="VFDT decision boundaries on cross drift" width="360">
+    </td>
+    <td align="center">
+      <strong>Cross drift</strong><br>
+      <img src="gifs/phtm_boundary_seed6_cross.gif" alt="PHT-M decision boundaries on cross drift" width="360">
+    </td>
+  </tr>
+</table>
+
 ## Abstract
 
 Adapting to drifting data streams remains a key challenge in online learning, where effective model adaptation depends on timely concept drift detection. Most existing approaches respond to drift only after distributional changes occur, reacting to concept drift, limiting their ability to prevent the classifier's performance degradation. This work introduces a novel methodology to anticipate concept drift and enable proactive adaptation before the data distribution shift negatively impacts the classifier. We propose four proactive adaptation strategies based on the VFDT algorithm. We evaluate the proposed methods across four scenarios with diverse data stream configurations. Results demonstrate that proactive adaptation reduces the adverse effects of concept drift and improves classification performance. In particular, the proposed strategies consistently outperformed in settings with incremental drift, underscoring the potential of anticipatory approaches and addressing a notable gap in the current literature.
